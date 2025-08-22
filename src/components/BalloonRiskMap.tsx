@@ -67,6 +67,11 @@ const BalloonRiskMap: React.FC = () => {
   const [displayTrails, setDisplayTrails] = useState<BalloonTrail[]>([]);
   const [usingRealStorms, setUsingRealStorms] = useState<boolean>(false);
   const [selectedBalloon, setSelectedBalloon] = useState<any>(null);
+  const [isAnimating, setIsAnimating] = useState<boolean>(false);
+  const [currentAnimation, setCurrentAnimation] = useState<any>(null);
+  const [selectedBalloonForAnimation, setSelectedBalloonForAnimation] = useState<BalloonTrail | null>(null);
+  const animationRef = useRef<NodeJS.Timeout | null>(null);
+  const [animationProgress, setAnimationProgress] = useState<{ progress: number; altitude: number; position: [number, number] } | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -122,8 +127,17 @@ const BalloonRiskMap: React.FC = () => {
         const intersections = analyzeHurricaneIntersections(balloons, storms.cones, storms.tracks);
         setHurricaneIntersections(intersections);
           
-          console.log(`🌪️ Found ${getPastIntersections(intersections).length} past intersections`);
-          console.log(`⚠️ Found ${getFutureIntersections(intersections).length} future intersections`);
+          const pastIntersections = getPastIntersections(intersections);
+          const futureIntersections = getFutureIntersections(intersections);
+          const uniquePastBalloons = new Set(pastIntersections.map(i => i.balloonId));
+          const uniqueFutureBalloons = new Set(futureIntersections.map(i => i.balloonId));
+          
+          console.log(`🌪️ Found ${pastIntersections.length} past intersection points from ${uniquePastBalloons.size} balloons`);
+          console.log(`⚠️ Found ${futureIntersections.length} future intersection points from ${uniqueFutureBalloons.size} balloons`);
+          
+          if (isDebugMode() && pastIntersections.length > 0) {
+            console.log('Past intersection details:', pastIntersections.map(i => `${i.balloonId} at ${i.timestamp}`));
+          }
           
           setDisplayTrails(balloons);
         }
@@ -192,17 +206,21 @@ const BalloonRiskMap: React.FC = () => {
     );
     
     if (trail.points.length >= 2) {
-      // Determine color and styling based on intersection type
-      let trailColor = trail.color;
-      let trailType = 'trail';
-      
-      if (pastIntersection) {
-        trailColor = '#ff6b35'; // Orange for past intersections
-        trailType = 'past-intersection';
-      } else if (futureIntersection) {
-        trailColor = '#ff0000'; // Red for future intersections
-        trailType = 'future-intersection';
-      }
+             // Determine color and styling based on intersection type and animation state
+       let trailColor = trail.color;
+       let trailType = 'trail';
+       
+               // Highlight the balloon being animated
+        if (isAnimating && selectedBalloonForAnimation && trail.balloonId === selectedBalloonForAnimation.balloonId) {
+          trailColor = '#9333ea'; // Purple for animated balloon
+          trailType = 'animated';
+        } else if (pastIntersection) {
+          trailColor = '#ff6b35'; // Orange for past intersections
+          trailType = 'past-intersection';
+        } else if (futureIntersection) {
+          trailColor = '#ff0000'; // Red for future intersections
+          trailType = 'future-intersection';
+        }
       
       // Create line for the balloon flight path
       balloonFeatures.push({
@@ -222,27 +240,27 @@ const BalloonRiskMap: React.FC = () => {
         }
       });
       
-      // Add current position (last point) as a circle
-      const currentPosition = trail.points[trail.points.length - 1];
-      if (currentPosition) {
-        balloonFeatures.push({
-          type: 'Feature',
-          properties: {
-            balloonId: trail.balloonId,
-            color: trailColor,
-            isRisk,
-            altitude: currentPosition.altitude,
-            timestamp: currentPosition.timestamp,
-            type: 'current-position',
-            pastIntersection: !!pastIntersection,
-            futureIntersection: !!futureIntersection
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: [currentPosition.longitude, currentPosition.latitude]
-          }
-        });
-      }
+                 // Add current position (last point) as a circle
+           const currentPosition = trail.points[trail.points.length - 1];
+           if (currentPosition) {
+             balloonFeatures.push({
+               type: 'Feature',
+               properties: {
+                 balloonId: trail.balloonId,
+                 color: trailColor,
+                 isRisk,
+                 altitude: currentPosition.altitude,
+                 timestamp: currentPosition.timestamp,
+                 type: isAnimating && selectedBalloonForAnimation && trail.balloonId === selectedBalloonForAnimation.balloonId ? 'animated' : 'current-position',
+                 pastIntersection: !!pastIntersection,
+                 futureIntersection: !!futureIntersection
+               },
+               geometry: {
+                 type: 'Point',
+                 coordinates: [currentPosition.longitude, currentPosition.latitude]
+               }
+             });
+           }
     }
   });
 
@@ -311,6 +329,107 @@ const BalloonRiskMap: React.FC = () => {
     }
   };
 
+  const selectRandomBalloon = () => {
+    if (balloonTrails.length === 0) return;
+    const randomIndex = Math.floor(Math.random() * balloonTrails.length);
+    const randomBalloon = balloonTrails[randomIndex];
+    setSelectedBalloonForAnimation(randomBalloon);
+  };
+
+  const startAnimation = () => {
+    if (!selectedBalloonForAnimation || !mapRef.current) return;
+    
+    setIsAnimating(true);
+    const map = mapRef.current.getMap();
+    const points = selectedBalloonForAnimation.points;
+    
+    // Create a smooth path along the trajectory
+    const path = points.map(point => [point.longitude, point.latitude]);
+    const altitudes = points.map(point => point.altitude);
+    
+    const animationDuration = 30000; // 30 seconds total
+    const startTime = Date.now();
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / animationDuration, 1);
+      
+      if (progress >= 1) {
+        // Animation complete
+        setIsAnimating(false);
+        setAnimationProgress(null);
+        return;
+      }
+      
+      // Find current position along the path
+      const pathIndex = progress * (path.length - 1);
+      const index1 = Math.floor(pathIndex);
+      const index2 = Math.min(index1 + 1, path.length - 1);
+      const fraction = pathIndex - index1;
+      
+      // Interpolate between points
+      const point1 = path[index1];
+      const point2 = path[index2];
+      const currentLon = point1[0] + (point2[0] - point1[0]) * fraction;
+      const currentLat = point1[1] + (point2[1] - point1[1]) * fraction;
+      
+      // Interpolate altitude
+      const alt1 = altitudes[index1];
+      const alt2 = altitudes[index2];
+      const currentAlt = alt1 + (alt2 - alt1) * fraction;
+      
+      // Calculate bearing to show the flight direction
+      const bearing = Math.atan2(point2[1] - point1[1], point2[0] - point1[0]) * 180 / Math.PI;
+      
+      // Update animation progress for UI display
+      setAnimationProgress({
+        progress: progress * 100,
+        altitude: currentAlt,
+        position: [currentLon, currentLat]
+      });
+      
+      // Use easeTo for smoother camera movement
+      map.easeTo({
+        center: [currentLon, currentLat],
+        zoom: 8,
+        bearing: bearing, // Follow the flight direction
+        pitch: 75, // Steeper pitch for better side view
+        duration: 200, // Slightly longer duration for smoother movement
+        easing: (t) => t // Linear easing for consistent speed
+      });
+      
+      // Continue animation with longer interval for smoother movement
+      animationRef.current = setTimeout(animate, 200);
+    };
+    
+    animate();
+  };
+
+  const stopAnimation = () => {
+    setIsAnimating(false);
+    setAnimationProgress(null);
+    if (animationRef.current) {
+      clearTimeout(animationRef.current);
+      animationRef.current = null;
+    }
+    if (mapRef.current) {
+      const map = mapRef.current.getMap();
+      map.flyTo({
+        center: [-75, 30],
+        zoom: 4,
+        bearing: 0,
+        pitch: 0,
+        duration: 2000
+      });
+    }
+  };
+
+  const replayAnimation = () => {
+    if (selectedBalloonForAnimation) {
+      startAnimation();
+    }
+  };
+
   if (!MAPBOX_TOKEN) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-100">
@@ -341,18 +460,39 @@ const BalloonRiskMap: React.FC = () => {
 
   return (
     <div className="relative h-screen">
-      <Map
-        ref={mapRef}
-        mapboxAccessToken={MAPBOX_TOKEN}
-        initialViewState={{
-          longitude: -75,
-          latitude: 30,
-          zoom: 4
-        }}
-        style={{ width: '100%', height: '100%' }}
-        mapStyle="mapbox://styles/mapbox/dark-v11"
-        onClick={handleMapClick}
-      >
+             <Map
+         ref={mapRef}
+         mapboxAccessToken={MAPBOX_TOKEN}
+         initialViewState={{
+           longitude: -75,
+           latitude: 30,
+           zoom: 4,
+           pitch: 0,
+           bearing: 0
+         }}
+         style={{ width: '100%', height: '100%' }}
+         mapStyle="mapbox://styles/mapbox/streets-v12"
+         projection={{ name: "globe" }}
+         onClick={handleMapClick}
+         onLoad={() => {
+           // Add atmosphere/fog effect and ensure 3D globe
+           if (mapRef.current) {
+             const map = mapRef.current.getMap();
+             
+             // Set fog for atmosphere effect
+             map.setFog({
+               'color': 'rgb(186, 210, 235)', // Atmospheric color
+               'high-color': 'rgb(36, 92, 223)', // High atmosphere color
+               'horizon-blend': 0.02, // Horizon fade
+               'space-color': 'rgb(11, 11, 25)', // Space color
+               'star-intensity': 0.6 // Star visibility
+             });
+             
+             // Ensure globe projection is active
+             map.setProjection('globe');
+           }
+         }}
+       >
         {/* Balloon Flight Paths */}
         <Source id="balloon-trails" type="geojson" data={balloonTrailsGeoJSON}>
           {/* Normal flight path trails */}
@@ -377,18 +517,30 @@ const BalloonRiskMap: React.FC = () => {
               'line-opacity': 0.8
             }}
           />
-          {/* Future intersection trails */}
-          <Layer
-            id="balloon-trails-future"
-            type="line"
-            filter={['==', ['get', 'type'], 'future-intersection']}
-            paint={{
-              'line-color': '#ff0000', // Red for future intersections
-              'line-width': 4,
-              'line-opacity': 0.9,
-              'line-dasharray': [2, 1] // Dashed for future
-            }}
-          />
+                     {/* Future intersection trails */}
+           <Layer
+             id="balloon-trails-future"
+             type="line"
+             filter={['==', ['get', 'type'], 'future-intersection']}
+             paint={{
+               'line-color': '#ff0000', // Red for future intersections
+               'line-width': 4,
+               'line-opacity': 0.9,
+               'line-dasharray': [2, 1] // Dashed for future
+             }}
+           />
+                       {/* Animated balloon trail */}
+            <Layer
+              id="balloon-trails-animated"
+              type="line"
+              filter={['==', ['get', 'type'], 'animated']}
+              paint={{
+                'line-color': '#9333ea', // Purple for animated balloon
+                'line-width': 6,
+                'line-opacity': 1.0,
+                'line-dasharray': [4, 2] // Dashed for animated
+              }}
+            />
           {/* Current balloon positions */}
           <Layer
             id="balloon-current-positions"
@@ -396,19 +548,21 @@ const BalloonRiskMap: React.FC = () => {
             filter={['==', ['get', 'type'], 'current-position']}
             paint={{
               'circle-color': ['get', 'color'],
-              'circle-radius': [
-                'case',
-                ['get', 'futureIntersection'], 10, // Largest for future intersections
-                ['get', 'pastIntersection'], 8,   // Medium for past intersections
-                6  // Normal size for regular balloons
-              ],
+                             'circle-radius': [
+                 'case',
+                 ['all', ['get', 'futureIntersection'], ['!=', ['get', 'type'], 'animated']], 10, // Largest for future intersections
+                 ['all', ['get', 'pastIntersection'], ['!=', ['get', 'type'], 'animated']], 8,   // Medium for past intersections
+                 ['==', ['get', 'type'], 'animated'], 12, // Largest for animated balloon
+                 6  // Normal size for regular balloons
+               ],
               'circle-opacity': 0.9,
-              'circle-stroke-width': [
-                'case',
-                ['get', 'futureIntersection'], 3,
-                ['get', 'pastIntersection'], 2,
-                1
-              ],
+                             'circle-stroke-width': [
+                 'case',
+                 ['all', ['get', 'futureIntersection'], ['!=', ['get', 'type'], 'animated']], 3,
+                 ['all', ['get', 'pastIntersection'], ['!=', ['get', 'type'], 'animated']], 2,
+                 ['==', ['get', 'type'], 'animated'], 4, // Thicker stroke for animated balloon
+                 1
+               ],
               'circle-stroke-color': '#ffffff'
             }}
 
@@ -525,6 +679,79 @@ const BalloonRiskMap: React.FC = () => {
         )}
       </div>
 
+             {/* Animation Controls */}
+       <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-3 text-xs border" style={{ top: '200px', width: '200px' }}>
+         <h3 className="font-bold mb-2 text-black text-xs">🎈 Balloon Animation</h3>
+         <div className="space-y-1">
+           {!selectedBalloonForAnimation ? (
+             <button
+               onClick={selectRandomBalloon}
+               className="w-full bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition-colors text-xs"
+             >
+               Select Random
+             </button>
+           ) : (
+             <>
+               <div className="text-xs text-black mb-1">
+                 {selectedBalloonForAnimation.balloonId}
+               </div>
+                               {!isAnimating ? (
+                  <button
+                    onClick={startAnimation}
+                    className="w-full bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition-colors text-xs"
+                  >
+                    ▶️ Start Animation
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopAnimation}
+                    className="w-full bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-colors text-xs"
+                  >
+                    ⏹️ Stop
+                  </button>
+                )}
+                               <button
+                  onClick={replayAnimation}
+                  disabled={isAnimating}
+                  className="w-full bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600 transition-colors disabled:opacity-50 text-xs"
+                >
+                  🔄 Replay
+                </button>
+               <button
+                 onClick={() => {
+                   setSelectedBalloonForAnimation(null);
+                   stopAnimation();
+                 }}
+                 className="w-full bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition-colors text-xs"
+               >
+                 🏠 Reset
+               </button>
+             </>
+           )}
+         </div>
+         
+         {/* Animation Progress Indicator */}
+         {isAnimating && animationProgress && (
+           <div className="mt-3 pt-2 border-t">
+             <div className="text-xs text-black mb-1">
+               <strong>Progress:</strong> {animationProgress.progress.toFixed(1)}%
+             </div>
+             <div className="text-xs text-black mb-1">
+               <strong>Altitude:</strong> {animationProgress.altitude.toFixed(2)} km
+             </div>
+             <div className="text-xs text-black">
+               <strong>Position:</strong> {animationProgress.position[1].toFixed(2)}°N, {Math.abs(animationProgress.position[0]).toFixed(2)}°W
+             </div>
+             <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+               <div 
+                 className="bg-blue-500 h-1 rounded-full transition-all duration-100" 
+                 style={{ width: `${animationProgress.progress}%` }}
+               ></div>
+             </div>
+           </div>
+         )}
+       </div>
+
       {/* Legend */}
       <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4 text-sm border">
         <h3 className="font-bold mb-2 text-black">Legend</h3>
@@ -538,7 +765,7 @@ const BalloonRiskMap: React.FC = () => {
             <span className="text-black">Past Hurricane Intersection</span>
           </div>
           <div className="flex items-center">
-            <div className="w-4 h-0.5 bg-red-500 mr-2 border-dashed"></div>
+            <div className="w-4 h-0.5 mr-2 border-2 border-dashed border-red-500"></div>
             <span className="text-black">Future Hurricane Risk</span>
           </div>
           <div className="flex items-center">
@@ -546,11 +773,11 @@ const BalloonRiskMap: React.FC = () => {
             <span className="text-black">Current Position</span>
           </div>
           <div className="flex items-center">
-            <div className="w-4 h-0.5 bg-red-500 border-dashed mr-2"></div>
+            <div className="w-4 h-0.5 mr-2 border-2 border-dashed" style={{borderColor: '#7c3aed'}}></div>
             <span className="text-black">Storm Track</span>
           </div>
           <div className="flex items-center">
-            <div className="w-4 h-2 bg-red-300 border border-red-500 mr-2"></div>
+            <div className="w-4 h-2 mr-2 border-2" style={{backgroundColor: '#9333ea', borderColor: '#7c3aed', opacity: 0.3}}></div>
             <span className="text-black">Hurricane Cone</span>
           </div>
         </div>
@@ -568,10 +795,10 @@ const BalloonRiskMap: React.FC = () => {
           <p className="text-black">Total Balloons: {balloonTrails.length}</p>
           <p className="text-black">Currently Displaying: {displayTrails.length}</p>
           <p className="text-orange-600 font-medium">
-            Past Intersections: {getPastIntersections(hurricaneIntersections).length}
+            Past Intersections: {new Set(getPastIntersections(hurricaneIntersections).map(i => i.balloonId)).size}
           </p>
           <p className="text-red-600 font-medium">
-            Future Risk: {getFutureIntersections(hurricaneIntersections).length}
+            Future Risk: {new Set(getFutureIntersections(hurricaneIntersections).map(i => i.balloonId)).size}
           </p>
           <p className="text-black">
             Active Storms: {stormData.cones.length} 

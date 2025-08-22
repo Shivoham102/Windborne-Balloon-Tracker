@@ -202,58 +202,178 @@ function analyzeFutureTrajectoryIntersections(
   const intersections: HurricaneIntersection[] = [];
   const now = new Date();
   
-  if (balloonTrail.points.length < 2) return intersections;
+  if (balloonTrail.points.length < 3) return intersections;
   
-  // Get balloon's recent trajectory to predict future path
-  const recentPoints = balloonTrail.points.slice(-3);
+  // Get balloon's recent trajectory for better velocity estimation
+  const recentPoints = balloonTrail.points.slice(-5); // Use more points for better accuracy
   const lastPoint = recentPoints[recentPoints.length - 1];
-  const secondLastPoint = recentPoints[recentPoints.length - 2];
   
-  if (!lastPoint || !secondLastPoint) return intersections;
+  if (!lastPoint) return intersections;
   
-  // Calculate balloon velocity
-  const timeDiff = (new Date(lastPoint.timestamp).getTime() - new Date(secondLastPoint.timestamp).getTime()) / (1000 * 60 * 60);
-  const latVelocity = (lastPoint.latitude - secondLastPoint.latitude) / timeDiff;
-  const lonVelocity = (lastPoint.longitude - secondLastPoint.longitude) / timeDiff;
+  // Calculate average velocity over recent points (each point is 1 hour apart)
+  let totalLatVelocity = 0;
+  let totalLonVelocity = 0;
+  
+  for (let i = 1; i < recentPoints.length; i++) {
+    const current = recentPoints[i];
+    const previous = recentPoints[i - 1];
+    
+    // Simple difference since points are exactly 1 hour apart
+    totalLatVelocity += current.latitude - previous.latitude;
+    totalLonVelocity += current.longitude - previous.longitude;
+  }
+  
+  const velocityCount = recentPoints.length - 1;
+  if (velocityCount === 0) return intersections;
+  
+  const avgLatVelocity = totalLatVelocity / velocityCount;  // degrees per hour
+  const avgLonVelocity = totalLonVelocity / velocityCount;  // degrees per hour
   
   // Find storm track for this storm
   const stormTrack = stormTracks.find(track => track.properties.stormName === storm.properties.stormName);
   
-  // Project both balloon and storm forward in time
-  for (let hours = 1; hours <= 48; hours++) {
-    // Predicted balloon position
-    const balloonLat = lastPoint.latitude + (latVelocity * hours);
-    const balloonLon = lastPoint.longitude + (lonVelocity * hours);
-    const balloonPoint = (turf as any).point([balloonLon, balloonLat]);
+  // If we have a storm track, find closest approach between balloon and hurricane trajectories
+  if (stormTrack?.geometry?.type === 'LineString') {
+    const closestApproach = findClosestApproachBetweenTrajectories(
+      { ...lastPoint, balloonId: balloonTrail.balloonId },
+      avgLatVelocity,
+      avgLonVelocity,
+      stormTrack.geometry.coordinates,
+      riskThreshold
+    );
     
-    // Check intersection with storm cone
-    const distanceToCone = calculateDistanceToPolygon(balloonPoint, storm.geometry);
-    
-    // Check intersection with storm track (if available)
-    let distanceToTrack = Infinity;
-    if (stormTrack?.geometry?.type === 'LineString') {
-      distanceToTrack = (turf as any).pointToLineDistance(balloonPoint, stormTrack.geometry, { units: 'kilometers' });
-    }
-    
-    const minDistance = Math.min(distanceToCone, distanceToTrack);
-    
-    if (minDistance <= riskThreshold) {
-      const futureTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
+    if (closestApproach) {
+      const futureTime = new Date(now.getTime() + closestApproach.hours * 60 * 60 * 1000);
       
       intersections.push({
         balloonId: balloonTrail.balloonId,
         stormName: storm.properties.stormName,
         intersectionType: 'future',
-        closestDistance: minDistance,
+        closestDistance: closestApproach.distance,
         timestamp: futureTime.toISOString(),
         altitude: lastPoint.altitude,
-        insideForcastCone: distanceToCone <= riskThreshold,
-        hoursFromNow: hours
+        insideForcastCone: false,
+        hoursFromNow: closestApproach.hours
       });
+    }
+  } else {
+    // Fallback to simple cone intersection if no track available
+    for (let hours = 1; hours <= 48; hours++) {
+      const balloonLat = lastPoint.latitude + (avgLatVelocity * hours);
+      const balloonLon = lastPoint.longitude + (avgLonVelocity * hours);
+      const balloonPoint = (turf as any).point([balloonLon, balloonLat]);
       
-      break; // Only report first intersection
+      const distanceToCone = calculateDistanceToPolygon(balloonPoint, storm.geometry);
+      
+      if (distanceToCone <= riskThreshold) {
+        const futureTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
+        
+        intersections.push({
+          balloonId: balloonTrail.balloonId,
+          stormName: storm.properties.stormName,
+          intersectionType: 'future',
+          closestDistance: distanceToCone,
+          timestamp: futureTime.toISOString(),
+          altitude: lastPoint.altitude,
+          insideForcastCone: true,
+          hoursFromNow: hours
+        });
+        
+        break;
+      }
     }
   }
   
   return intersections;
+}
+
+// Find closest approach between balloon trajectory and hurricane track with vector analysis
+function findClosestApproachBetweenTrajectories(
+  balloonPosition: any,
+  balloonLatVel: number,
+  balloonLonVel: number,
+  stormTrackCoords: number[][],
+  riskThreshold: number
+): { distance: number; hours: number } | null {
+  let minDistance = Infinity;
+  let bestTime = 0;
+  let isConverging = false;
+  
+  // Calculate current distance to storm track for reference
+  const currentBalloonPoint = (turf as any).point([balloonPosition.longitude, balloonPosition.latitude]);
+  const stormLine = (turf as any).lineString(stormTrackCoords);
+  const currentDistance = (turf as any).pointToLineDistance(currentBalloonPoint, stormLine, { units: 'kilometers' });
+  
+  // Sample time points over next 48 hours
+  for (let hours = 1; hours <= 48; hours += 0.5) {
+    // Predicted balloon position
+    const balloonLat = balloonPosition.latitude + (balloonLatVel * hours);
+    const balloonLon = balloonPosition.longitude + (balloonLonVel * hours);
+    const balloonPoint = (turf as any).point([balloonLon, balloonLat]);
+    
+    // Find distance to storm track
+    const distance = (turf as any).pointToLineDistance(balloonPoint, stormLine, { units: 'kilometers' });
+    
+    if (distance < minDistance) {
+      minDistance = distance;
+      bestTime = hours;
+      
+      // Check if balloon and storm are converging (getting closer over time)
+      isConverging = distance < currentDistance;
+    }
+  }
+  
+  // Additional vector analysis: check if balloon is heading toward storm track
+  const vectorConvergence = calculateVectorConvergence(
+    balloonPosition,
+    balloonLatVel,
+    balloonLonVel,
+    stormTrackCoords
+  );
+  
+  // Debug logging (use balloonTrail.balloonId since balloonPosition might not have it)
+  const balloonId = balloonPosition.balloonId || 'unknown';
+  
+  // Stricter conditions - balloon must be actively heading toward storm
+  const willIntersect = minDistance <= riskThreshold && 
+                       vectorConvergence > 0.9 && // Much stricter: balloon must be clearly heading toward storm
+                       isConverging &&            // AND getting closer over time
+                       minDistance < currentDistance * 0.8; // Must get significantly closer (20% improvement)
+  
+  return willIntersect ? { distance: minDistance, hours: bestTime } : null;
+}
+
+// Calculate if balloon vector is pointing toward storm track
+function calculateVectorConvergence(
+  balloonPosition: any,
+  balloonLatVel: number,
+  balloonLonVel: number,
+  stormTrackCoords: number[][]
+): number {
+  // Find nearest point on storm track to current balloon position
+  const balloonPoint = (turf as any).point([balloonPosition.longitude, balloonPosition.latitude]);
+  const stormLine = (turf as any).lineString(stormTrackCoords);
+  const nearestPoint = (turf as any).nearestPointOnLine(stormLine, balloonPoint);
+  
+  // Vector from balloon to nearest storm point
+  const toStormLat = nearestPoint.geometry.coordinates[1] - balloonPosition.latitude;
+  const toStormLon = nearestPoint.geometry.coordinates[0] - balloonPosition.longitude;
+  
+  // Normalize vectors
+  const balloonSpeed = Math.sqrt(balloonLatVel * balloonLatVel + balloonLonVel * balloonLonVel);
+  const toStormDistance = Math.sqrt(toStormLat * toStormLat + toStormLon * toStormLon);
+  
+  if (balloonSpeed === 0 || toStormDistance === 0) return 0;
+  
+  const balloonDirLat = balloonLatVel / balloonSpeed;
+  const balloonDirLon = balloonLonVel / balloonSpeed;
+  const toStormDirLat = toStormLat / toStormDistance;
+  const toStormDirLon = toStormLon / toStormDistance;
+  
+  // Dot product gives cosine of angle between vectors
+  // > 0 means balloon is heading toward storm
+  // < 0 means balloon is heading away from storm
+  const dotProduct = (balloonDirLat * toStormDirLat) + (balloonDirLon * toStormDirLon);
+  
+  return dotProduct;
 }
