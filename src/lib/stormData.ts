@@ -46,24 +46,18 @@ interface NHCStorm {
 
 export async function fetchActiveStorms(): Promise<{ cones: StormCone[], tracks: StormTrack[], isRealData: boolean }> {
   try {
-    console.log('🌪️ Fetching real hurricane data from NHC...');
-    
     // First, get the list of active storms
     const activeStormsResponse = await fetch('/api/nhc-storms');
     
     if (!activeStormsResponse.ok) {
-      console.warn('Failed to fetch active storms from NHC, using mock data');
       return { ...generateMockStormData(), isRealData: false };
     }
     
     const activeStorms: NHCStorm[] = await activeStormsResponse.json();
     
     if (!activeStorms || activeStorms.length === 0) {
-      console.log('📭 No active hurricanes found, using mock data for demonstration');
       return { ...generateMockStormData(), isRealData: false };
     }
-    
-    console.log(`🌀 Found ${activeStorms.length} active storm(s): ${activeStorms.map(s => s.name).join(', ')}`);
     
     // Process each active storm
     const cones: StormCone[] = [];
@@ -78,35 +72,23 @@ export async function fetchActiveStorms(): Promise<{ cones: StormCone[], tracks:
         // Try to get forecast track from KMZ
         const trackUrl = (storm as any).forecastTrack?.kmzFile;
         if (trackUrl) {
-          console.log(`🔗 Fetching track for ${storm.name} from: ${trackUrl}`);
           const track = await fetchTrackFromKMZ(storm, trackUrl);
           if (track) {
             tracks.push(track);
-            console.log(`✅ Added track for ${storm.name}`);
-          } else {
-            console.log(`❌ No track data for ${storm.name}`);
           }
-        } else {
-          console.log(`⚠️ No track URL for ${storm.name}`);
         }
-
-        console.log(`✅ Created storm data for ${storm.name} (${storm.classification}, ${storm.intensity}kt)`);
       } catch (stormError) {
-        console.warn(`Error processing storm ${storm.name}:`, stormError);
+        // Storm processing failed, continue with next storm
       }
     }
     
     if (cones.length === 0 && tracks.length === 0) {
-      console.warn('No valid storm data could be processed, using mock data');
       return { ...generateMockStormData(), isRealData: false };
     }
     
-    console.log(`✅ Successfully loaded ${cones.length} storm cones and ${tracks.length} tracks from real NHC data`);
     return { cones, tracks, isRealData: true };
     
   } catch (error) {
-    console.error('Error fetching real storm data:', error);
-    console.log('🔄 Falling back to mock data');
     return { ...generateMockStormData(), isRealData: false };
   }
 }
@@ -248,10 +230,9 @@ async function fetchTrackFromKMZ(storm: NHCStorm, kmzUrl: string): Promise<Storm
         maxWindSpeed: storm.intensity
       }
     };
-  } catch (error) {
-    console.warn(`Failed to fetch track for ${storm.name}:`, error);
-    return null;
-  }
+      } catch (error) {
+      return null;
+    }
 }
 
 // Create a simple cone from storm center point
@@ -269,8 +250,6 @@ function createSimpleConeFromPoint(storm: NHCStorm): StormCone {
   else if (intensity >= 96) radius = 0.6; // Category 2
   else if (intensity >= 74) radius = 0.5; // Category 1
   else radius = 0.3; // Tropical Storm
-  
-  console.log(`[SIMPLE-CONE] Creating cone for ${storm.name} (${storm.classification}, ${intensity}kt) with radius ${radius}°`);
   
   // Create a simple circular cone
   const points: number[][] = [];

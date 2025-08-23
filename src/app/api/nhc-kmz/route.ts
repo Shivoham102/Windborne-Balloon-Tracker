@@ -19,11 +19,9 @@ export async function GET(request: NextRequest) {
     if (!kmlFile) return NextResponse.json({ error: 'No KML found' }, { status: 422 });
 
     const kmlContent = await contents.files[kmlFile].async('text');
-    console.log(`[KMZ] KML file: ${kmlFile}, content length: ${kmlContent.length}`);
     
     const parser = new XMLParser({ ignoreAttributes: false });
     const kmlData = parser.parse(kmlContent);
-    console.log(`[KMZ] Parsed KML structure:`, Object.keys(kmlData));
 
     // Extract track coordinates - try different KML structures
     let placemarks = [];
@@ -37,15 +35,10 @@ export async function GET(request: NextRequest) {
       placemarks = Array.isArray(kmlData.kml.Document.Folder.Placemark) ? kmlData.kml.Document.Folder.Placemark : [kmlData.kml.Document.Folder.Placemark];
     }
     
-    console.log(`[KMZ] KML full structure:`, JSON.stringify(kmlData, null, 2).substring(0, 500));
-    console.log(`[KMZ] Found ${placemarks.length} placemarks`);
     const tracks = [];
 
     for (const placemark of Array.isArray(placemarks) ? placemarks : [placemarks]) {
-      console.log(`[KMZ] Processing placemark:`, placemark?.name || 'unnamed');
-      
       if (placemark?.LineString?.coordinates) {
-        console.log(`[KMZ] Found LineString coordinates`);
         const coords = placemark.LineString.coordinates
           .trim()
           .split(/\s+/)
@@ -54,7 +47,6 @@ export async function GET(request: NextRequest) {
             return [lon, lat];
           });
         
-        console.log(`[KMZ] Parsed ${coords.length} coordinate pairs`);
         tracks.push({
           type: 'Feature',
           geometry: { type: 'LineString', coordinates: coords },
@@ -64,7 +56,6 @@ export async function GET(request: NextRequest) {
       
       // Extract forecast points
       if (placemark?.Point?.coordinates) {
-        console.log(`[KMZ] Found Point coordinates`);
         const [lon, lat] = placemark.Point.coordinates.split(',').map(Number);
         tracks.push({
           type: 'Feature',
@@ -73,8 +64,6 @@ export async function GET(request: NextRequest) {
         });
       }
     }
-
-    console.log(`[KMZ] Total tracks extracted: ${tracks.length}`);
 
     return NextResponse.json({
       type: 'FeatureCollection',

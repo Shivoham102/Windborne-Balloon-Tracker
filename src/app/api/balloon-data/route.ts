@@ -24,8 +24,6 @@ export async function GET(request: NextRequest) {
     const fileName = hour.padStart(2, '0');
     const windborneUrl = `https://a.windbornesystems.com/treasure/${fileName}.json`;
     
-    console.log(`[API] Fetching WindBorne data for hour ${fileName}`);
-
     // Fetch data from WindBorne API
     const response = await fetch(windborneUrl, {
       method: 'GET',
@@ -38,7 +36,6 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
-      console.warn(`[API] WindBorne API returned ${response.status} for hour ${fileName}`);
       return NextResponse.json(
         { 
           error: `WindBorne API returned ${response.status}`,
@@ -50,10 +47,6 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    
-    // Log successful response
-    const dataLength = Array.isArray(data) ? data.length : 0;
-    console.log(`[API] Successfully fetched ${dataLength} balloon records for hour ${fileName}`);
 
     // Return the data with proper headers
     return NextResponse.json(data, {
@@ -64,8 +57,6 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[API] Error fetching balloon data:', error);
-    
     return NextResponse.json(
       { 
         error: 'Failed to fetch balloon data',

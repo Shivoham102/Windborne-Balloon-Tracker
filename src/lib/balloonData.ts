@@ -31,15 +31,13 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
         },
       })
         .then(async (response) => {
-          if (!response.ok) {
-            console.warn(`Failed to fetch data for hour ${fileName}:`, response.status);
-            return null;
-          }
+                if (!response.ok) {
+        return null;
+      }
           const data = await response.json();
           return { hour: parseInt(fileName), data };
         })
         .catch((error) => {
-          console.warn(`Error fetching data for hour ${fileName}:`, error);
           return null;
         });
       
@@ -47,15 +45,12 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
     }
     
     // Wait for all requests to complete
-    console.log('Fetching balloon data from all 24 hours...');
     const results = await Promise.all(fetchPromises);
     
     // Filter out failed requests and sort by hour
     const validResults = results
       .filter(result => result !== null)
       .sort((a, b) => a!.hour - b!.hour);
-    
-    console.log(`✅ Successfully fetched data for ${validResults.length} hours`);
     
     // Track each balloon across all hours
     // Each position in the hourly array represents the same balloon index across time
@@ -65,12 +60,10 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
     // First, determine how many balloons we have (from the first available hour)
     const firstValidResult = validResults[0];
     if (!firstValidResult || !Array.isArray(firstValidResult.data)) {
-      console.warn('No valid balloon data found');
       return [];
     }
     
     const numBalloons = firstValidResult.data.length;
-    console.log(`📊 Tracking ${numBalloons} balloons across ${validResults.length} hours`);
     
     // Initialize trails for each balloon
     for (let balloonIndex = 0; balloonIndex < numBalloons; balloonIndex++) {
@@ -136,15 +129,10 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
     // Filter out trails with too few points (need at least 2 points to draw a line)
     const validTrails = balloonTrails.filter(trail => trail.points.length >= 2);
     
-    console.log(`✅ Successfully processed ${totalDataPoints} balloon data points from WindBorne API`);
-    console.log(`🎈 Created ${validTrails.length} balloon flight paths`);
-    console.log(`📏 Average points per trail: ${(totalDataPoints / validTrails.length).toFixed(1)}`);
-    console.log(`🌍 Tracking ${validTrails.length} balloons with complete flight paths`);
-    console.log(`⏱️  Flight path duration: 24 hours per balloon`);
+
     
     return validTrails;
   } catch (error) {
-    console.error('Error fetching balloon data:', error);
     return [];
   }
 }

@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    console.log('[NHC-API] Fetching current storms from NHC...');
-    
     // Fetch current storms from NHC
     const response = await fetch('https://www.nhc.noaa.gov/CurrentStorms.json', {
       method: 'GET',
@@ -16,7 +14,6 @@ export async function GET() {
     });
 
     if (!response.ok) {
-      console.warn(`[NHC-API] NHC API returned ${response.status}`);
       return NextResponse.json(
         { error: `NHC API returned ${response.status}`, storms: [] },
         { status: response.status }
@@ -35,14 +32,7 @@ export async function GET() {
     } else if (data.storms) {
       storms = data.storms;
     } else {
-      console.log('[NHC-API] No active storms format recognized, returning empty array');
       storms = [];
-    }
-    
-    console.log(`[NHC-API] Found ${storms.length} active storms`);
-    
-    if (storms.length > 0) {
-      console.log(`[NHC-API] Storm names: ${storms.map((s: any) => s.name || s.stormName || 'Unknown').join(', ')}`);
     }
 
     return NextResponse.json(storms, {
@@ -53,8 +43,6 @@ export async function GET() {
     });
 
   } catch (error) {
-    console.error('[NHC-API] Error fetching storm data:', error);
-    
     return NextResponse.json(
       { 
         error: 'Failed to fetch storm data from NHC',
