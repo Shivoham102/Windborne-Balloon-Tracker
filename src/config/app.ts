@@ -36,6 +36,6 @@ export const APP_CONFIG = {
 } as const;
 
 // Helper functions for easy configuration checks
-export const useRealHurricanes = () => APP_CONFIG.HURRICANE_DATA.USE_REAL_DATA;
-export const useRealBalloons = () => APP_CONFIG.BALLOON_DATA.USE_REAL_DATA;
+export const getRealHurricanes = () => APP_CONFIG.HURRICANE_DATA.USE_REAL_DATA;
+export const getRealBalloons = () => APP_CONFIG.BALLOON_DATA.USE_REAL_DATA;
 export const isDebugMode = () => APP_CONFIG.DEBUG.VERBOSE_LOGGING;

@@ -1,12 +1,11 @@
 import React from 'react';
-import { FilterMode } from '@/types';
+import { FilterMode, BalloonTrail, HurricaneIntersection } from '@/types';
 import { getPastIntersections, getFutureIntersections } from '@/lib/proximityAnalysis';
-import { HurricaneIntersection } from '@/types';
 
 interface FilterControlsProps {
   filterMode: FilterMode;
   setFilterMode: (mode: FilterMode) => void;
-  balloonTrails: any[];
+  balloonTrails: BalloonTrail[];
   hurricaneIntersections: HurricaneIntersection[];
 }
 
@@ -40,7 +39,7 @@ const FilterControls: React.FC<FilterControlsProps> = ({
             onChange={(e) => setFilterMode(e.target.value as FilterMode)}
             className="mr-3"
           />
-          <span className="text-black">Past Intersections ({getPastIntersections(hurricaneIntersections).length})</span>
+          <span className="text-black">Past Intersections ({new Set(getPastIntersections(hurricaneIntersections).map(i => i.balloonId)).size})</span>
         </label>
         <label className="flex items-center cursor-pointer">
           <input
@@ -51,7 +50,7 @@ const FilterControls: React.FC<FilterControlsProps> = ({
             onChange={(e) => setFilterMode(e.target.value as FilterMode)}
             className="mr-3"
           />
-          <span className="text-black">Future Intersections ({getFutureIntersections(hurricaneIntersections).length})</span>
+          <span className="text-black">Future Intersections ({new Set(getFutureIntersections(hurricaneIntersections).map(i => i.balloonId)).size})</span>
         </label>
       </div>
       {filterMode === 'future-intersections' && (

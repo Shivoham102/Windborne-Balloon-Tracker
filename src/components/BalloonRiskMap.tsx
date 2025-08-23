@@ -5,15 +5,12 @@ import Map, { Source, Layer, MapRef } from 'react-map-gl';
 import { BalloonTrail, StormCone, StormTrack, ProximityAlert, HurricaneIntersection, FilterMode } from '@/types';
 import { fetchBalloonData, generateMockBalloonData } from '@/lib/balloonData';
 import { fetchActiveStorms, generateMockStormData } from '@/lib/stormData';
-import { useRealHurricanes, useRealBalloons, isDebugMode } from '@/config/app';
+import { getRealHurricanes, getRealBalloons } from '@/config/app';
 import { 
   analyzeProximity, 
-  getTrailSegmentsInRisk, 
   analyzeHurricaneIntersections,
   getBalloonsByIntersectionType,
-  getRecentTrajectory,
-  getPastIntersections,
-  getFutureIntersections
+  getRecentTrajectory
 } from '@/lib/proximityAnalysis';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
@@ -27,19 +24,7 @@ import AnimationControls from './AnimationControls';
 import BalloonPopup from './BalloonPopup';
 import AlertCard from './AlertCard';
 
-// Configure Mapbox to reduce telemetry requests
-if (typeof window !== 'undefined') {
-  // Disable Mapbox telemetry
-  try {
-    // @ts-ignore
-    if (window.mapboxgl) {
-      // @ts-ignore
-      window.mapboxgl.config.API_URL = 'https://api.mapbox.com';
-    }
-  } catch (error) {
-    // Ignore telemetry configuration errors
-  }
-}
+
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
 
@@ -56,14 +41,27 @@ const BalloonRiskMap: React.FC = () => {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [displayTrails, setDisplayTrails] = useState<BalloonTrail[]>([]);
   const [usingRealStorms, setUsingRealStorms] = useState<boolean>(false);
-  const [selectedBalloon, setSelectedBalloon] = useState<any>(null);
+  const [selectedBalloon, setSelectedBalloon] = useState<{
+    balloonId: string;
+    altitude: number;
+    timestamp: string;
+    coordinates: [number, number];
+    pastIntersection: boolean;
+    futureIntersection: boolean;
+  } | null>(null);
   const [isAnimating, setIsAnimating] = useState<boolean>(false);
-  const [currentAnimation, setCurrentAnimation] = useState<any>(null);
   const [selectedBalloonForAnimation, setSelectedBalloonForAnimation] = useState<BalloonTrail | null>(null);
   const animationRef = useRef<NodeJS.Timeout | null>(null);
   const [animationProgress, setAnimationProgress] = useState<{ progress: number; altitude: number; position: [number, number] } | null>(null);
   const [animatedPath, setAnimatedPath] = useState<[number, number][]>([]);
-  const [showHelpModal, setShowHelpModal] = useState<boolean>(true);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [isClient, setIsClient] = useState<boolean>(false);
+
+  // Ensure client-side rendering to prevent hydration mismatch
+  useEffect(() => {
+    setIsClient(true);
+    setShowHelpModal(true);
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -72,7 +70,7 @@ const BalloonRiskMap: React.FC = () => {
       try {
         // Load balloon and storm data
         let balloons;
-        if (useRealBalloons()) {
+        if (getRealBalloons()) {
           balloons = await fetchBalloonData();
         } else {
           balloons = generateMockBalloonData();
@@ -80,7 +78,7 @@ const BalloonRiskMap: React.FC = () => {
         
         // Hurricane data configuration
         let stormResult;
-        if (useRealHurricanes()) {
+        if (getRealHurricanes()) {
           stormResult = await fetchActiveStorms();
         } else {
           stormResult = { ...generateMockStormData(), isRealData: false };
@@ -89,7 +87,7 @@ const BalloonRiskMap: React.FC = () => {
         const storms = { cones: stormResult.cones, tracks: stormResult.tracks };
         setUsingRealStorms(stormResult.isRealData);
         
-        if (balloons.length === 0 && useRealBalloons()) {
+        if (balloons.length === 0 && getRealBalloons()) {
           const mockBalloons = generateMockBalloonData();
           setBalloonTrails(mockBalloons);
           
@@ -117,7 +115,7 @@ const BalloonRiskMap: React.FC = () => {
         }
         
         setStormData(storms);
-      } catch (error) {
+      } catch {
         // Fallback to mock data if API fails
         const mockBalloons = generateMockBalloonData();
         const storms = generateMockStormData();
@@ -159,7 +157,23 @@ const BalloonRiskMap: React.FC = () => {
   }, [filterMode, balloonTrails, hurricaneIntersections]);
 
   // Create GeoJSON for balloon trails and points
-  const balloonFeatures: any[] = [];
+  const balloonFeatures: Array<{
+    type: 'Feature';
+    properties: {
+      balloonId: string;
+      color: string;
+      isRisk: boolean;
+      altitude: number;
+      type: string;
+      pastIntersection: boolean;
+      futureIntersection: boolean;
+      timestamp?: string;
+    };
+    geometry: {
+      type: 'LineString' | 'Point';
+      coordinates: number[][] | number[];
+    };
+  }> = [];
   
   displayTrails.forEach(trail => {
     // Determine the risk and intersection status
@@ -301,9 +315,6 @@ const BalloonRiskMap: React.FC = () => {
   const startAnimation = () => {
     if (!selectedBalloonForAnimation || !mapRef.current) return;
     
-    // Store current filter state to restore later
-    const currentFilterMode = filterMode;
-    
     // Temporarily set filter to 'all' to show the full balloon trail during animation
     setFilterMode('all');
     
@@ -324,7 +335,7 @@ const BalloonRiskMap: React.FC = () => {
       
       if (progress >= 1) {
         setIsAnimating(false);
-        setAnimationProgress(null);
+        // Keep the final animation state visible - don't reset progress
         return;
       }
       
@@ -369,8 +380,7 @@ const BalloonRiskMap: React.FC = () => {
 
   const stopAnimation = () => {
     setIsAnimating(false);
-    setAnimationProgress(null);
-    setAnimatedPath([]);
+    // Keep the current animation state visible when manually stopped
     if (animationRef.current) {
       clearTimeout(animationRef.current);
       animationRef.current = null;
@@ -390,6 +400,9 @@ const BalloonRiskMap: React.FC = () => {
 
   const replayAnimation = () => {
     if (selectedBalloonForAnimation) {
+      // Reset animation state before starting replay
+      setAnimationProgress(null);
+      setAnimatedPath([]);
       startAnimation();
     }
   };
@@ -642,7 +655,13 @@ const BalloonRiskMap: React.FC = () => {
         onReplayAnimation={replayAnimation}
         onReset={() => {
           setSelectedBalloonForAnimation(null);
-          stopAnimation();
+          setIsAnimating(false);
+          setAnimationProgress(null);
+          setAnimatedPath([]);
+          if (animationRef.current) {
+            clearTimeout(animationRef.current);
+            animationRef.current = null;
+          }
         }}
       />
 
@@ -660,10 +679,10 @@ const BalloonRiskMap: React.FC = () => {
       />
 
       {/* Help Icon */}
-      {!showHelpModal && <HelpIcon onClick={() => setShowHelpModal(true)} />}
+      {isClient && !showHelpModal && <HelpIcon onClick={() => setShowHelpModal(true)} />}
 
       {/* Help Modal */}
-      <HelpModal isOpen={showHelpModal} onClose={() => setShowHelpModal(false)} />
+      {isClient && <HelpModal isOpen={showHelpModal} onClose={() => setShowHelpModal(false)} />}
     </div>
   );
 };

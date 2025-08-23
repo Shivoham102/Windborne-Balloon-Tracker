@@ -1,8 +1,6 @@
 import { StormCone, StormTrack } from '@/types';
 
-// NHC API endpoints
-const NHC_ACTIVE_STORMS_API = 'https://www.nhc.noaa.gov/CurrentStorms.json';
-const NHC_GIS_BASE = 'https://www.nhc.noaa.gov/gis/forecast/archive/';
+
 
 interface NHCStorm {
   id: string;
@@ -70,14 +68,14 @@ export async function fetchActiveStorms(): Promise<{ cones: StormCone[], tracks:
         cones.push(cone);
 
         // Try to get forecast track from KMZ
-        const trackUrl = (storm as any).forecastTrack?.kmzFile;
+        const trackUrl = (storm as { forecastTrack?: { kmzFile?: string } }).forecastTrack?.kmzFile;
         if (trackUrl) {
           const track = await fetchTrackFromKMZ(storm, trackUrl);
           if (track) {
             tracks.push(track);
           }
         }
-      } catch (stormError) {
+      } catch {
         // Storm processing failed, continue with next storm
       }
     }
@@ -88,7 +86,7 @@ export async function fetchActiveStorms(): Promise<{ cones: StormCone[], tracks:
     
     return { cones, tracks, isRealData: true };
     
-  } catch (error) {
+  } catch {
     return { ...generateMockStormData(), isRealData: false };
   }
 }
@@ -216,7 +214,7 @@ async function fetchTrackFromKMZ(storm: NHCStorm, kmzUrl: string): Promise<Storm
     if (!response.ok) return null;
 
     const geoJson = await response.json();
-    const trackFeature = geoJson.features?.find((f: any) => f.geometry?.type === 'LineString');
+    const trackFeature = geoJson.features?.find((f: { geometry?: { type?: string } }) => f.geometry?.type === 'LineString');
     
     if (!trackFeature) return null;
 
@@ -230,7 +228,7 @@ async function fetchTrackFromKMZ(storm: NHCStorm, kmzUrl: string): Promise<Storm
         maxWindSpeed: storm.intensity
       }
     };
-      } catch (error) {
+      } catch {
       return null;
     }
 }

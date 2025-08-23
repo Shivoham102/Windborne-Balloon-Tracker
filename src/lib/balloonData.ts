@@ -37,7 +37,7 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
           const data = await response.json();
           return { hour: parseInt(fileName), data };
         })
-        .catch((error) => {
+        .catch(() => {
           return null;
         });
       
@@ -55,7 +55,6 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
     // Track each balloon across all hours
     // Each position in the hourly array represents the same balloon index across time
     const balloonTrails: BalloonTrail[] = [];
-    let totalDataPoints = 0;
     
     // First, determine how many balloons we have (from the first available hour)
     const firstValidResult = validResults[0];
@@ -81,7 +80,7 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
       
       const { hour, data: hourlyData } = result;
       
-      hourlyData.forEach((balloonCoords: any, balloonIndex: number) => {
+      hourlyData.forEach((balloonCoords: number[], balloonIndex: number) => {
         // Handle the actual API format: [latitude, longitude, altitude]
         if (Array.isArray(balloonCoords) && balloonCoords.length >= 3 && balloonIndex < numBalloons) {
           const latitude = balloonCoords[0];
@@ -108,8 +107,6 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
               timestamp: timestamp,
               balloonId: trail.balloonId
             });
-            
-            totalDataPoints++;
           }
         }
       });
@@ -132,7 +129,7 @@ export async function fetchBalloonData(): Promise<BalloonTrail[]> {
 
     
     return validTrails;
-  } catch (error) {
+  } catch {
     return [];
   }
 }

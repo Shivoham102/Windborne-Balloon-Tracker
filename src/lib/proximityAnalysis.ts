@@ -30,8 +30,8 @@ export function analyzeProximity(
   return alerts.sort((a, b) => a.closestDistance - b.closestDistance);
 }
 
-function findClosestPointToStorm(trail: BalloonTrail, storm: StormCone): { point: any, distance: number } | null {
-  let closestPoint = null;
+function findClosestPointToStorm(trail: BalloonTrail, storm: StormCone): { point: { longitude: number; latitude: number; altitude: number; timestamp: string; balloonId: string }, distance: number } | null {
+  let closestPoint: { longitude: number; latitude: number; altitude: number; timestamp: string; balloonId: string } | null = null;
   let minDistance = Infinity;
 
   trail.points.forEach(point => {
@@ -289,7 +289,7 @@ function analyzeFutureTrajectoryIntersections(
 
 // Find closest approach between balloon trajectory and hurricane track with vector analysis
 function findClosestApproachBetweenTrajectories(
-  balloonPosition: any,
+  balloonPosition: { longitude: number; latitude: number; balloonId?: string },
   balloonLatVel: number,
   balloonLonVel: number,
   stormTrackCoords: number[][],
@@ -332,7 +332,7 @@ function findClosestApproachBetweenTrajectories(
   );
   
   // Debug logging (use balloonTrail.balloonId since balloonPosition might not have it)
-  const balloonId = balloonPosition.balloonId || 'unknown';
+  // const balloonId = balloonPosition.balloonId || 'unknown';
   
   // Stricter conditions - balloon must be actively heading toward storm
   const willIntersect = minDistance <= riskThreshold && 
@@ -345,7 +345,7 @@ function findClosestApproachBetweenTrajectories(
 
 // Calculate if balloon vector is pointing toward storm track
 function calculateVectorConvergence(
-  balloonPosition: any,
+  balloonPosition: { longitude: number; latitude: number },
   balloonLatVel: number,
   balloonLonVel: number,
   stormTrackCoords: number[][]

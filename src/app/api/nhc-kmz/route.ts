@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
           .trim()
           .split(/\s+/)
           .map((coord: string) => {
-            const [lon, lat, alt] = coord.split(',').map(Number);
+            const [lon, lat] = coord.split(',').map(Number);
             return [lon, lat];
           });
         
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       features: tracks
     });
 
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Parse failed' }, { status: 500 });
   }
 }

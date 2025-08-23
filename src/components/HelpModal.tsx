@@ -35,7 +35,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
               <h3 className="text-lg font-semibold text-gray-800 mb-2">🎮 How to Use</h3>
               <ul className="text-sm space-y-2 list-disc list-inside">
                 <li><strong>Filter Panel (Top Right):</strong> Switch between viewing all balloons, past intersections, or future risks</li>
-                <li><strong>Animation Panel:</strong> Select a random balloon and watch its 24-hour journey with the "Life of a Balloon" feature</li>
+                <li><strong>Animation Panel:</strong> Select a random balloon and watch its 24-hour journey with the &ldquo;Life of a Balloon&rdquo; feature</li>
                 <li><strong>Click Balloons:</strong> Click any balloon point to see detailed information in the popup</li>
                 <li><strong>Legend (Bottom Left):</strong> Understand the color coding for different balloon states and storm elements</li>
                 <li><strong>Stats Panel (Top Left):</strong> View real-time statistics about balloon counts and intersection analysis</li>
@@ -49,11 +49,13 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 <li><strong>Hurricane Data:</strong> Live storm information from National Hurricane Center (NHC)</li>
               </ul>
             </div>
+            
+            <p><b>P.S.</b> The at risk balloons are not accurate since there is limited data.</p>
 
             <div className="bg-blue-50 p-4 rounded-lg">
               <h3 className="text-lg font-semibold text-blue-800 mb-2">💡 Pro Tip</h3>
               <p className="text-sm text-blue-700">
-                Use the "Future Intersections" filter to focus on balloons at risk, or try the animation feature to see how individual balloons travel through storm systems over time.
+                Use the &ldquo;Future Intersections&rdquo; filter to focus on balloons at risk, or try the animation feature to see how individual balloons travel through storm systems over time.
               </p>
             </div>
           </div>

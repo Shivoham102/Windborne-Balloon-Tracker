@@ -1,13 +1,16 @@
 import React from 'react';
-import { HurricaneIntersection } from '@/types';
+import { HurricaneIntersection, StormCone, StormTrack, BalloonTrail } from '@/types';
 import { getPastIntersections, getFutureIntersections } from '@/lib/proximityAnalysis';
-import { useRealHurricanes, useRealBalloons } from '@/config/app';
+import { getRealHurricanes, getRealBalloons } from '@/config/app';
 
 interface StatsPanelProps {
-  balloonTrails: any[];
-  displayTrails: any[];
+  balloonTrails: BalloonTrail[];
+  displayTrails: BalloonTrail[];
   hurricaneIntersections: HurricaneIntersection[];
-  stormData: { cones: any[]; tracks: any[] };
+  stormData: { 
+    cones: StormCone[]; 
+    tracks: StormTrack[] 
+  };
   usingRealStorms: boolean;
   filterMode: string;
 }
@@ -39,8 +42,8 @@ const StatsPanel: React.FC<StatsPanelProps> = ({
           </span>
         </p>
         <div className="mt-2 pt-2 border-t text-xs text-gray-600">
-          <p>🌪️ Hurricanes: {useRealHurricanes() ? 'Live NHC API' : 'Mock Testing'}</p>
-          <p>🎈 Balloons: {useRealBalloons() ? 'WindBorne API' : 'Mock Testing'}</p>
+          <p>🌪️ Hurricanes: {getRealHurricanes() ? 'Live NHC API' : 'Mock Testing'}</p>
+          <p>🎈 Balloons: {getRealBalloons() ? 'WindBorne API' : 'Mock Testing'}</p>
         </div>
       </div>
       {filterMode !== 'all' && (
